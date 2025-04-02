@@ -1,0 +1,19 @@
+# First, make sure you have python3-venv installed
+sudo apt install python3-full python3-venv
+
+# Create a virtual environment
+python3 -m venv ~/telegram-bot-venv
+
+# Activate the virtual environment
+source ~/telegram-bot-venv/bin/activate
+
+# Now install the required packages
+pip install python-telegram-bot yt-dlp
+
+
+
+
+
+docker build -t telegram-ytdlp-bot .
+docker run -e TELEGRAM_BOT_TOKEN=8090046333:AAEYea4Mf53Z5h_wHew-QO0ey2MIBkau9-w telegram-ytdlp-bot
+docker run -d --name my-bot -e TELEGRAM_BOT_TOKEN=8090046333:AAEYea4Mf53Z5h_wHew-QO0ey2MIBkau9-w telegram-ytdlp-bot
