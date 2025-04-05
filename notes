@@ -11,9 +11,17 @@ source ~/telegram-bot-venv/bin/activate
 pip install python-telegram-bot yt-dlp
 
 
-
+git config user.name "jozodr"
+git config user.email "jozo.ronjic@gmail.com"
 
 
 docker build -t telegram-ytdlp-bot .
 docker run -e TELEGRAM_BOT_TOKEN=8090046333:AAEYea4Mf53Z5h_wHew-QO0ey2MIBkau9-w telegram-ytdlp-bot
 docker run -d --name my-bot -e TELEGRAM_BOT_TOKEN=8090046333:AAEYea4Mf53Z5h_wHew-QO0ey2MIBkau9-w telegram-ytdlp-bot
+
+
+
+docker login ghcr.io -u jozodr
+docker pull ghcr.io/jozodr/telegram-ytdlp-bot
+
+docker run -d --name telegram-ytdlp-bot -e TELEGRAM_BOT_TOKEN=8090046333:AAEYea4Mf53Z5h_wHew-QO0ey2MIBkau9-w ghcr.io/jozodr/telegram-ytdlp-bot

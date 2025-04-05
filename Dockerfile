@@ -1,25 +1,20 @@
-# Use an official lightweight Python image
-FROM python:3.12.3
+# Use Alpine as base image
+FROM python:3.12-alpine
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
+# Install ffmpeg and dependencies
+RUN apk add --no-cache ffmpeg
 
-# Set the working directory inside the container
+# Set working directory
 WORKDIR /app
 
-# Copy only necessary files to the container
+# Copy only necessary files
 COPY requirements.txt bot.py /app/
 
-# Install dependencies
+# Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Set environment variables (Optional: Use Docker secrets for security)
+# Set environment variables
 ENV TELEGRAM_BOT_TOKEN="YOUR_BOT_TOKEN_HERE"
 
 # Run the bot
-RUN python --version
-RUN pip list
-RUN which ffmpeg
 CMD ["python", "bot.py"]
