@@ -233,25 +233,52 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await status_message.edit_text("✅ Download complete! Sending video...")
             
             try:
-                # Increase timeout for video upload
+                # For larger files, use a much longer timeout
+                file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+                upload_timeout = max(300, int(file_size_mb * 10))  # 10 seconds per MB, minimum 5 minutes
+                
+                await status_message.edit_text(f"✅ Uploading video ({file_size_mb:.1f}MB)...")
+                
+                # Open and send the file with a longer timeout
                 with open(video_path, 'rb') as video_file:
-                    # Set a longer timeout for sending large files
                     await asyncio.wait_for(
                         update.message.reply_video(
                             video=video_file,
                             caption=f"📹 {info.get('title', 'Downloaded Video')}",
                             supports_streaming=True
                         ),
-                        timeout=120  # 2 minutes timeout for uploading
+                        timeout=upload_timeout
                     )
                 
                 await status_message.delete()
             except asyncio.TimeoutError:
                 logging.error("Timeout while sending video to Telegram")
-                await status_message.edit_text("⚠️ Video downloaded but sending timed out. The file might be too large or your connection is slow.")
+                await status_message.edit_text("⚠️ Video downloaded but sending timed out. Trying again with a longer timeout...")
+                
+                # Try again with an even longer timeout
+                try:
+                    with open(video_path, 'rb') as video_file:
+                        # Double the timeout for the retry
+                        await asyncio.wait_for(
+                            update.message.reply_video(
+                                video=video_file,
+                                caption=f"📹 {info.get('title', 'Downloaded Video')} (retry)",
+                                supports_streaming=True
+                            ),
+                            timeout=upload_timeout * 2  # Double the original timeout
+                        )
+                    await status_message.delete()
+                except Exception as retry_error:
+                    logging.error(f"Retry also failed: {retry_error}")
+                    await status_message.edit_text("⚠️ Video downloaded but couldn't be sent. The file might be too large for your connection.")
+            
             except (TimedOut, NetworkError) as telegram_error:
                 logging.error(f"Telegram API error: {telegram_error}")
-                await status_message.edit_text("⚠️ Network issue while sending video. The video was downloaded successfully and will be sent when connection improves.")
+                await status_message.edit_text("⚠️ Network issue while sending video. Trying again...")
+                
+                # Wait a moment before retrying
+                await asyncio.sleep(2)
+                
                 # Try again with a longer timeout
                 try:
                     with open(video_path, 'rb') as video_file:
@@ -261,11 +288,12 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                                 caption=f"📹 {info.get('title', 'Downloaded Video')} (retry)",
                                 supports_streaming=True
                             ),
-                            timeout=180  # 3 minutes timeout for retry
+                            timeout=upload_timeout * 2  # Double the original timeout
                         )
                     await status_message.delete()
-                except Exception:
-                    pass  # Already handled the first error
+                except Exception as retry_error:
+                    logging.error(f"Retry also failed: {retry_error}")
+                    await status_message.edit_text("⚠️ Video downloaded but couldn't be sent due to network issues.")
             except Exception as send_error:
                 logging.error(f"Error sending video: {send_error}")
                 await status_message.edit_text(f"⚠️ Video downloaded but couldn't send: {str(send_error)}")
