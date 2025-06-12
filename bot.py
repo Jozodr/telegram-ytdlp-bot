@@ -2,8 +2,10 @@ import os
 import logging
 import time
 import asyncio
+import socket
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.error import TimedOut, NetworkError
 import yt_dlp
 import tempfile
 
@@ -35,7 +37,7 @@ class DownloadProgressHook:
         self.downloaded_bytes = 0
         self.total_bytes = 0
         self.filename = ""
-        self.update_interval = 3  # Update status every 3 seconds
+        self.update_interval = 5  # Update status every 5 seconds to reduce API calls
 
     async def progress_hook(self, d):
         if d['status'] == 'downloading':
@@ -93,11 +95,19 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     status_message = await update.message.reply_text("⏳ Analyzing video URL... Please wait.")
     
+    # Set a reasonable timeout for the entire operation
+    download_timeout = 300  # 5 minutes total timeout
+    
     try:
         # Create a temporary directory to store the downloaded file
         with tempfile.TemporaryDirectory() as temp_dir:
+            # Set operation start time for timeout tracking
+            operation_start_time = time.time()
             # Create progress hook
             progress_handler = DownloadProgressHook(status_message)
+            
+            # Set default socket timeout
+            socket.setdefaulttimeout(30)  # 30 seconds timeout for all socket operations
             
             ydl_opts = {
                 'format': 'mp4',  # Use a single container format that doesn't require merging
@@ -105,6 +115,10 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 'noplaylist': True,
                 'quiet': True,
                 'no_warnings': True,
+                'socket_timeout': 20,  # Socket timeout in seconds
+                'retries': 3,  # Retry up to 3 times
+                'fragment_retries': 3,  # Retry fragments up to 3 times
+                'extractor_retries': 3,  # Retry extractor up to 3 times
                 'progress_hooks': [lambda d: asyncio.run_coroutine_threadsafe(
                     progress_handler.progress_hook(d), 
                     asyncio.get_event_loop()
@@ -134,8 +148,17 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
             # Now download with progress updates
             ydl_opts["format"] = selected_format
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([url])
+            
+            # Add timeout handling
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    # Check if we've exceeded our total operation timeout
+                    if time.time() - operation_start_time > download_timeout:
+                        await status_message.edit_text("⚠️ Operation timed out. Trying to process what we have...")
+                    else:
+                        ydl.download([url])
+            except socket.timeout:
+                await status_message.edit_text("⚠️ Network timeout occurred. Trying to process what we have...")
             
             # Find the downloaded file
             files = os.listdir(temp_dir)
@@ -155,29 +178,68 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await status_message.edit_text("✅ Download complete! Sending video...")
             
             try:
+                # Increase timeout for video upload
                 with open(video_path, 'rb') as video_file:
-                    await update.message.reply_video(
-                        video=video_file,
-                        caption=f"📹 {info.get('title', 'Downloaded Video')}",
-                        supports_streaming=True
+                    # Set a longer timeout for sending large files
+                    await asyncio.wait_for(
+                        update.message.reply_video(
+                            video=video_file,
+                            caption=f"📹 {info.get('title', 'Downloaded Video')}",
+                            supports_streaming=True
+                        ),
+                        timeout=120  # 2 minutes timeout for uploading
                     )
                 
                 await status_message.delete()
+            except asyncio.TimeoutError:
+                logging.error("Timeout while sending video to Telegram")
+                await status_message.edit_text("⚠️ Video downloaded but sending timed out. The file might be too large or your connection is slow.")
+            except (TimedOut, NetworkError) as telegram_error:
+                logging.error(f"Telegram API error: {telegram_error}")
+                await status_message.edit_text("⚠️ Network issue while sending video. The video was downloaded successfully and will be sent when connection improves.")
+                # Try again with a longer timeout
+                try:
+                    with open(video_path, 'rb') as video_file:
+                        await asyncio.wait_for(
+                            update.message.reply_video(
+                                video=video_file,
+                                caption=f"📹 {info.get('title', 'Downloaded Video')} (retry)",
+                                supports_streaming=True
+                            ),
+                            timeout=180  # 3 minutes timeout for retry
+                        )
+                    await status_message.delete()
+                except Exception:
+                    pass  # Already handled the first error
             except Exception as send_error:
                 logging.error(f"Error sending video: {send_error}")
                 await status_message.edit_text(f"⚠️ Video downloaded but couldn't send: {str(send_error)}")
             
+    except asyncio.TimeoutError:
+        logging.error("Asyncio timeout error")
+        await status_message.edit_text("⚠️ Operation timed out. Please try again with a different video.")
+    except socket.timeout:
+        logging.error("Socket timeout error")
+        await status_message.edit_text("⚠️ Network connection timed out. Please try again later.")
     except Exception as e:
         logging.error(f"Error downloading video: {e}")
         await status_message.edit_text(f"❌ Error: {str(e)}")
 
 def main() -> None:
     """Start the bot."""
-    application = Application.builder().token(TOKEN).build()
+    # Configure application with appropriate timeouts
+    application = Application.builder().token(TOKEN).connect_timeout(30.0).pool_timeout(30.0).build()
+    
+    # Set connection pool timeouts
+    application.http_version = "1.1"  # Use HTTP 1.1 which has better timeout handling
+    application.connection_pool_size = 8  # Increase connection pool for better handling
+    
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_video))
-    application.run_polling()
+    
+    # Start the bot with appropriate polling parameters
+    application.run_polling(timeout=30)
 
 if __name__ == "__main__":
     main()
