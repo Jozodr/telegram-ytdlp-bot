@@ -25,3 +25,26 @@ docker login ghcr.io -u jozodr
 docker pull ghcr.io/jozodr/telegram-ytdlp-bot
 
 docker run -d --name telegram-ytdlp-bot -e TELEGRAM_BOT_TOKEN=8090046333:AAEYea4Mf53Z5h_wHew-QO0ey2MIBkau9-w ghcr.io/jozodr/telegram-ytdlp-bot
+
+
+
++++++++++++++++++++++++++
+export TELEGRAM_BOT_TOKEN="8090046333:AAEYea4Mf53Z5h_wHew-QO0ey2MIBkau9-w"
+
+
+
+docker login
+docker tag telegram-ytdlp-bot jozodr/telegram-ytdlp-bot
+docker push jozodr/telegram-ytdlp-bot
+
+docker login ghcr.io -u jozodr -p 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
+
+# Tag for GitHub Container Registry
+docker tag telegram-ytdlp-bot ghcr.io/jozodr/telegram-ytdlp-bot
+
+# Push to GitHub Container Registry
+docker push ghcr.io/jozodr/telegram-ytdlp-bot
+
+
+#na bigtower
+ 

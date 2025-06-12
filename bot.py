@@ -40,7 +40,7 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Create a temporary directory to store the downloaded file
         with tempfile.TemporaryDirectory() as temp_dir:
             ydl_opts = {
-                'format': 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/bv*+ba/b',
+                'format': 'mp4',  # Use a single container format that doesn't require merging
                 'outtmpl': f'{temp_dir}/%(title)s.%(ext)s',
                 'noplaylist': True,
                 'quiet': True,
