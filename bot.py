@@ -205,27 +205,6 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         return
                 else:
                     await status_message.edit_text(f"❌ Download error: {error_msg}")
-                    returnfmt} failed: {str(fmt_error)}")
-                            continue
-                    
-                    if not success:
-                        await status_message.edit_text("❌ Could not download any format of this YouTube video.")
-                        return
-                
-                # For non-YouTube or if YouTube specific handling failed
-                elif "Requested format is not available" in error_msg or "format not available" in error_msg.lower():
-                    await status_message.edit_text("⚠️ Format issue detected. Trying with basic settings...")
-                    try:
-                        # Last resort: use the most basic format option
-                        simple_opts = dict(ydl_opts)
-                        simple_opts["format"] = "worst"
-                        with yt_dlp.YoutubeDL(simple_opts) as ydl:
-                            ydl.download([url])
-                    except Exception as retry_error:
-                        await status_message.edit_text(f"❌ Failed to download video: {str(retry_error)}")
-                        return
-                else:
-                    await status_message.edit_text(f"❌ Download error: {error_msg}")
                     return
             except socket.timeout:
                 await status_message.edit_text("⚠️ Network timeout occurred. Trying to process what we have...")
