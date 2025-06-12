@@ -126,21 +126,28 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )]
             }
             
-            # First get video info without downloading
-            with yt_dlp.YoutubeDL({**ydl_opts, 'quiet': True}) as ydl:
-                await status_message.edit_text("⏳ Getting video information...")
-                info = ydl.extract_info(url, download=False)
-                formats = info.get("formats", [])
+            # Special handling for YouTube
+            if 'youtube.com' in url or 'youtu.be' in url:
+                await status_message.edit_text("⏳ YouTube video detected. Getting available formats...")
                 
-                if not formats:
-                    await status_message.edit_text("❌ No available formats for this video.")
-                    return
+                # For YouTube, don't specify format initially - just get the formats
+                with yt_dlp.YoutubeDL({**ydl_opts, 'quiet': True, 'listformats': True}) as ydl:
+                    # Just get the info without any format filtering
+                    info = ydl.extract_info(url, download=False)
                 
-                # For YouTube, use a simpler approach with format strings
-                if 'youtube.com' in url or 'youtu.be' in url:
-                    # Use a simple format string that works reliably with YouTube
-                    ydl_opts["format"] = "best[filesize<50M]/worst"
-                else:
+                # Use the most basic format option for YouTube
+                ydl_opts["format"] = "18/17/13"  # Standard formats that almost always exist (360p/240p/144p)
+            else:
+                # For non-YouTube sites, use the normal approach
+                with yt_dlp.YoutubeDL({**ydl_opts, 'quiet': True}) as ydl:
+                    await status_message.edit_text("⏳ Getting video information...")
+                    info = ydl.extract_info(url, download=False)
+                    formats = info.get("formats", [])
+                    
+                    if not formats:
+                        await status_message.edit_text("❌ No available formats for this video.")
+                        return
+                    
                     # For other sites, try to select the best format under the size limit
                     selected_format = None
                     for fmt in formats:
@@ -166,8 +173,32 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 error_msg = str(e)
                 logging.error(f"Download error: {error_msg}")
                 
-                # Try with a very simple format as last resort
-                if "Requested format is not available" in error_msg or "format not available" in error_msg.lower():
+                # For YouTube, try a sequence of known format IDs
+                if ('youtube.com' in url or 'youtu.be' in url) and "format" in error_msg.lower():
+                    await status_message.edit_text("⚠️ YouTube format issue. Trying alternative formats...")
+                    
+                    # Try a sequence of common YouTube format IDs
+                    youtube_formats = ["18", "22", "17", "13"]  # 360p, 720p, 144p, etc.
+                    success = False
+                    
+                    for fmt in youtube_formats:
+                        try:
+                            simple_opts = dict(ydl_opts)
+                            simple_opts["format"] = fmt
+                            with yt_dlp.YoutubeDL(simple_opts) as ydl:
+                                ydl.download([url])
+                            success = True
+                            break
+                        except Exception as fmt_error:
+                            logging.error(f"Format {fmt} failed: {str(fmt_error)}")
+                            continue
+                    
+                    if not success:
+                        await status_message.edit_text("❌ Could not download any format of this YouTube video.")
+                        return
+                
+                # For non-YouTube or if YouTube specific handling failed
+                elif "Requested format is not available" in error_msg or "format not available" in error_msg.lower():
                     await status_message.edit_text("⚠️ Format issue detected. Trying with basic settings...")
                     try:
                         # Last resort: use the most basic format option
