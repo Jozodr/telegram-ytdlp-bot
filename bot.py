@@ -110,8 +110,8 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             # Set default socket timeout
             socket.setdefaulttimeout(30)  # 30 seconds timeout for all socket operations
             
+            # Basic options without format specification
             ydl_opts = {
-                'format': 'best[ext=mp4]/best',  # Try mp4 first, then fallback to best available format
                 'outtmpl': f'{temp_dir}/%(title)s.%(ext)s',
                 'noplaylist': True,
                 'quiet': True,
@@ -135,21 +135,24 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 if not formats:
                     await status_message.edit_text("❌ No available formats for this video.")
                     return
-
-                # Try to get the best quality within Telegram's limit
-                selected_format = None
-                for fmt in formats:
-                    if "filesize" in fmt and fmt["filesize"] is not None and fmt["filesize"] < MAX_TELEGRAM_FILE_SIZE:
-                        selected_format = fmt["format_id"]
-                        break
                 
-                if not selected_format:
-                    await status_message.edit_text("⚠️ Video too large. Trying lowest quality...")
-                    selected_format = "worst"
-
-            # Now download with progress updates
-            if selected_format:
-                ydl_opts["format"] = selected_format
+                # For YouTube, use a simpler approach with format strings
+                if 'youtube.com' in url or 'youtu.be' in url:
+                    # Use a simple format string that works reliably with YouTube
+                    ydl_opts["format"] = "best[filesize<50M]/worst"
+                else:
+                    # For other sites, try to select the best format under the size limit
+                    selected_format = None
+                    for fmt in formats:
+                        if "filesize" in fmt and fmt["filesize"] is not None and fmt["filesize"] < MAX_TELEGRAM_FILE_SIZE:
+                            selected_format = fmt["format_id"]
+                            break
+                    
+                    if not selected_format:
+                        await status_message.edit_text("⚠️ Video too large. Trying lowest quality...")
+                        selected_format = "worst"
+                    
+                    ydl_opts["format"] = selected_format
             
             # Add timeout handling
             try:
@@ -160,18 +163,24 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     else:
                         ydl.download([url])
             except yt_dlp.utils.DownloadError as e:
-                if "Requested format is not available" in str(e):
-                    # Try again with a more flexible format
-                    logging.info("Retrying with more flexible format options")
-                    ydl_opts["format"] = "best"
+                error_msg = str(e)
+                logging.error(f"Download error: {error_msg}")
+                
+                # Try with a very simple format as last resort
+                if "Requested format is not available" in error_msg or "format not available" in error_msg.lower():
+                    await status_message.edit_text("⚠️ Format issue detected. Trying with basic settings...")
                     try:
-                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        # Last resort: use the most basic format option
+                        simple_opts = dict(ydl_opts)
+                        simple_opts["format"] = "worst"
+                        with yt_dlp.YoutubeDL(simple_opts) as ydl:
                             ydl.download([url])
                     except Exception as retry_error:
                         await status_message.edit_text(f"❌ Failed to download video: {str(retry_error)}")
                         return
                 else:
-                    raise
+                    await status_message.edit_text(f"❌ Download error: {error_msg}")
+                    return
             except socket.timeout:
                 await status_message.edit_text("⚠️ Network timeout occurred. Trying to process what we have...")
             
