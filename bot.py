@@ -7,6 +7,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TimedOut, NetworkError
 import yt_dlp
+from yt_dlp.utils import DownloadError
 import tempfile
 
 # Enable logging
@@ -110,7 +111,7 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             socket.setdefaulttimeout(30)  # 30 seconds timeout for all socket operations
             
             ydl_opts = {
-                'format': 'mp4',  # Use a single container format that doesn't require merging
+                'format': 'best[ext=mp4]/best',  # Try mp4 first, then fallback to best available format
                 'outtmpl': f'{temp_dir}/%(title)s.%(ext)s',
                 'noplaylist': True,
                 'quiet': True,
@@ -147,7 +148,8 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     selected_format = "worst"
 
             # Now download with progress updates
-            ydl_opts["format"] = selected_format
+            if selected_format:
+                ydl_opts["format"] = selected_format
             
             # Add timeout handling
             try:
@@ -157,6 +159,19 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         await status_message.edit_text("⚠️ Operation timed out. Trying to process what we have...")
                     else:
                         ydl.download([url])
+            except yt_dlp.utils.DownloadError as e:
+                if "Requested format is not available" in str(e):
+                    # Try again with a more flexible format
+                    logging.info("Retrying with more flexible format options")
+                    ydl_opts["format"] = "best"
+                    try:
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                            ydl.download([url])
+                    except Exception as retry_error:
+                        await status_message.edit_text(f"❌ Failed to download video: {str(retry_error)}")
+                        return
+                else:
+                    raise
             except socket.timeout:
                 await status_message.edit_text("⚠️ Network timeout occurred. Trying to process what we have...")
             
