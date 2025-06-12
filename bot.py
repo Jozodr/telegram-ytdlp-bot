@@ -128,20 +128,27 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             
             # Special handling for YouTube
             if 'youtube.com' in url or 'youtu.be' in url:
-                await status_message.edit_text("⏳ YouTube video detected. Getting available formats...")
+                await status_message.edit_text("⏳ YouTube video detected. Processing...")
                 
-                # For YouTube, use the most flexible format options
+                # For YouTube, use a direct approach with external downloader
                 ydl_opts.update({
-                    'format': 'best[filesize<50M]/bestvideo[filesize<50M]+bestaudio/best',
-                    'allow_dash': True,
-                    'allow_hls': True,  # Enable HLS (m3u8) formats
-                    'hls_prefer_native': True,
-                    'prefer_ffmpeg': True,  # Use ffmpeg for format conversion if needed
+                    'format': 'mp4',
+                    'external_downloader': 'ffmpeg',  # Use ffmpeg as external downloader
+                    'external_downloader_args': {'ffmpeg': ['-timeout', '30']},
+                    'skip_download': False,
+                    'youtube_include_dash_manifest': False,  # Skip DASH manifests
+                    'youtube_include_hls_manifest': True,  # Include HLS manifests
+                    'extract_flat': False,
+                    'force_generic_extractor': False
                 })
                 
-                # Get info without any format filtering
-                with yt_dlp.YoutubeDL({**ydl_opts, 'quiet': True, 'listformats': True}) as ydl:
-                    info = ydl.extract_info(url, download=False)
+                # Get basic info
+                try:
+                    with yt_dlp.YoutubeDL({**ydl_opts, 'quiet': True}) as ydl:
+                        info = ydl.extract_info(url, download=False)
+                except Exception as info_error:
+                    logging.warning(f"Could not get video info: {info_error}")
+                    info = {'title': 'YouTube Video'}
             else:
                 # For non-YouTube sites, use the normal approach
                 with yt_dlp.YoutubeDL({**ydl_opts, 'quiet': True}) as ydl:
@@ -178,25 +185,25 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 error_msg = str(e)
                 logging.error(f"Download error: {error_msg}")
                 
-                # For YouTube, try with the most basic options
+                # For YouTube, try with direct URL extraction
                 if ('youtube.com' in url or 'youtu.be' in url):
-                    await status_message.edit_text("⚠️ YouTube format issue. Trying with basic settings...")
+                    await status_message.edit_text("⚠️ YouTube format issue. Trying direct download...")
                     
                     try:
-                        # Use the most basic options possible
-                        basic_opts = {
-                            'outtmpl': f'{temp_dir}/%(title)s.%(ext)s',
-                            'format': 'best[filesize<50M]/worst',
+                        # Use youtube-dl directly with minimal options
+                        direct_opts = {
+                            'outtmpl': f'{temp_dir}/video.mp4',
+                            'format': '18',  # Force format 18 (360p mp4)
                             'noplaylist': True,
                             'quiet': True,
-                            'allow_dash': True,
-                            'allow_hls': True,
-                            'hls_prefer_native': True,
-                            'prefer_ffmpeg': True,
+                            'no_warnings': True,
+                            'external_downloader': 'ffmpeg',
+                            'external_downloader_args': {'ffmpeg': ['-timeout', '30']},
+                            'youtube_include_dash_manifest': False,
                             'merge_output_format': 'mp4'
                         }
                         
-                        with yt_dlp.YoutubeDL(basic_opts) as ydl:
+                        with yt_dlp.YoutubeDL(direct_opts) as ydl:
                             ydl.download([url])
                             
                     except Exception as basic_error:
