@@ -20,6 +20,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
+      - name: Lowercase registry owner
+        run: echo "REGISTRY_OWNER=$(echo ${{ github.repository_owner }} | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Log in to GHCR
         uses: docker/login-action@v2
         with:
@@ -34,5 +37,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/telegram-ytdlp-bot:${{ github.event.release.tag_name }}
-            ghcr.io/${{ github.repository_owner }}/telegram-ytdlp-bot:latest
+            ghcr.io/${{ env.REGISTRY_OWNER }}/telegram-ytdlp-bot:${{ github.event.release.tag_name }}
+            ghcr.io/${{ env.REGISTRY_OWNER }}/telegram-ytdlp-bot:latest
