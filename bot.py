@@ -150,22 +150,50 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     await status_message.edit_text("⏳ Getting video information...")
                     info = ydl.extract_info(url, download=False)
                     formats = info.get("formats", [])
-                    
+
                     if not formats:
                         await status_message.edit_text("❌ No available formats for this video.")
                         return
-                    
+
+                    # Check if this is an image-only post (vcodec=none)
+                    is_image = any(f.get("vcodec") == "none" for f in formats)
+
+                    if is_image:
+                        # Image post — download and send as photo(s)
+                        ydl_opts["format"] = "best"
+                        with yt_dlp.YoutubeDL(ydl_opts) as ydl_dl:
+                            ydl_dl.download([url])
+
+                        files = os.listdir(temp_dir)
+                        if not files:
+                            await status_message.edit_text("❌ Failed to download the image.")
+                            return
+
+                        await status_message.edit_text("✅ Download complete! Sending image(s)...")
+                        for fname in sorted(files):
+                            fpath = os.path.join(temp_dir, fname)
+                            if os.path.getsize(fpath) > MAX_TELEGRAM_FILE_SIZE:
+                                await status_message.edit_text("❌ Image too large for Telegram (>50MB).")
+                                return
+                            with open(fpath, 'rb') as img_file:
+                                await update.message.reply_photo(
+                                    photo=img_file,
+                                    caption=f"🖼️ {info.get('title', 'Downloaded Image')}"
+                                )
+                        await status_message.delete()
+                        return
+
                     # For other sites, try to select the best format under the size limit
                     selected_format = None
                     for fmt in formats:
                         if "filesize" in fmt and fmt["filesize"] is not None and fmt["filesize"] < MAX_TELEGRAM_FILE_SIZE:
                             selected_format = fmt["format_id"]
                             break
-                    
+
                     if not selected_format:
                         await status_message.edit_text("⚠️ Video too large. Trying lowest quality...")
                         selected_format = "worst"
-                    
+
                     ydl_opts["format"] = selected_format
             
             # Add timeout handling

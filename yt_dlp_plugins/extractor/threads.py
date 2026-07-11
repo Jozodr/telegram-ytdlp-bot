@@ -163,11 +163,14 @@ class ThreadsIE(InfoExtractor):
                 playlist_entries.append({
                     'id': entry_id,
                     'title': title,
-                    'url': best_image.get('url'),
-                    'ext': determine_ext(best_image.get('url'), 'jpg'),
-                    'width': int_or_none(best_image.get('width')),
-                    'height': int_or_none(best_image.get('height')),
-                    'vcodec': 'none',
+                    'formats': [{
+                        'url': best_image.get('url'),
+                        'ext': determine_ext(best_image.get('url'), 'jpg'),
+                        'width': int_or_none(best_image.get('width')),
+                        'height': int_or_none(best_image.get('height')),
+                        'vcodec': 'none',
+                    }],
+                    'thumbnail': best_image.get('url'),
                 })
 
         if not playlist_entries:
