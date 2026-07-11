@@ -89,11 +89,6 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await update.message.reply_text("Please send a valid video URL.")
         return
         
-    # Handle Instagram Threads URLs by converting them to standard Instagram URLs
-    if 'threads.net' in url:
-        # Convert Threads URL to Instagram URL format
-        url = url.replace('threads.net', 'instagram.com')
-    
     status_message = await update.message.reply_text("⏳ Analyzing video URL... Please wait.")
     
     # Set a reasonable timeout for the entire operation

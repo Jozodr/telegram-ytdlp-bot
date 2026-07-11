@@ -21,5 +21,8 @@ COPY requirements.txt bot.py /app/
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install yt-dlp Threads extractor plugin
+COPY yt_dlp_plugins/ /usr/local/lib/python3.12/site-packages/yt_dlp_plugins/
+
 # Run the bot
 CMD ["python", "bot.py"]
