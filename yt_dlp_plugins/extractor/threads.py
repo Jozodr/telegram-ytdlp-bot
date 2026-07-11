@@ -1,5 +1,9 @@
 import re
+import json
+import subprocess
 import logging
+import tempfile
+import os
 
 from yt_dlp.extractor.common import InfoExtractor
 from yt_dlp.utils import (
@@ -212,76 +216,103 @@ class ThreadsIE(InfoExtractor):
         return self.playlist_result(playlist_entries, **playlist_metadata)
 
     def _extract_with_browser(self, url, post_id, webpage_title):
-        """Use Playwright headless browser to extract video URLs."""
-        try:
-            from playwright.sync_api import sync_playwright
-        except ImportError:
+        """Use headless Chromium to extract video URLs from rendered page."""
+        chromium_path = None
+        for path in ['/usr/bin/chromium-browser', '/usr/bin/chromium', '/usr/bin/chrome']:
+            if os.path.exists(path):
+                chromium_path = path
+                break
+
+        if not chromium_path:
             self.raise_no_formats(
-                'Playwright is not installed. Cannot extract shared media posts.',
+                'No headless browser available for shared media posts.',
                 expected=True)
 
+        self.to_screen(f'Using headless Chromium at {chromium_path}')
+
+        # Use Chromium to dump the rendered DOM
+        try:
+            result = subprocess.run(
+                [
+                    chromium_path,
+                    '--headless',
+                    '--no-sandbox',
+                    '--disable-gpu',
+                    '--disable-dev-shm-usage',
+                    '--dump-dom',
+                    '--virtual-time-budget=10000',
+                    url,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=45,
+            )
+            rendered_html = result.stdout
+        except subprocess.TimeoutExpired:
+            self.raise_no_formats(
+                'Headless browser timed out rendering the page.',
+                expected=True)
+        except Exception as e:
+            self.raise_no_formats(
+                f'Headless browser error: {e}',
+                expected=True)
+
+        if not rendered_html or len(rendered_html) < 1000:
+            self.raise_no_formats(
+                'Headless browser returned empty page.',
+                expected=True)
+
+        self.to_screen(f'Rendered page: {len(rendered_html)} chars')
+
+        # Extract video URLs from rendered DOM
         video_urls = []
+        # Look for video elements
+        for match in re.finditer(r'<video[^>]*src="([^"]+)"', rendered_html):
+            video_url = url_or_none(match.group(1))
+            if video_url:
+                video_urls.append(video_url)
+
+        # Look for source elements inside video
+        for match in re.finditer(r'<source[^>]*src="([^"]+)"', rendered_html):
+            video_url = url_or_none(match.group(1))
+            if video_url:
+                video_urls.append(video_url)
+
+        # Look for blob URLs (common for video players)
+        # These won't work for download, but note them
+        blob_urls = re.findall(r'src="(blob:https?://[^"]+)"', rendered_html)
+
+        # Look for video URLs in JavaScript state
+        for match in re.finditer(r'"video_url"\s*:\s*"([^"]+)"', rendered_html):
+            video_url = url_or_none(match.group(1).replace('\\u0026', '&'))
+            if video_url and video_url not in video_urls:
+                video_urls.append(video_url)
+
+        # Look for display_url
+        for match in re.finditer(r'"display_url"\s*:\s*"([^"]+)"', rendered_html):
+            display_url = url_or_none(match.group(1).replace('\\u0026', '&'))
+            if display_url and ('video' in display_url or '.mp4' in display_url):
+                if display_url not in video_urls:
+                    video_urls.append(display_url)
+
+        # Extract title from rendered page
+        title = webpage_title
+        title_match = re.search(r'<title>([^<]+)</title>', rendered_html)
+        if title_match:
+            title = strip_or_none(
+                remove_end(title_match.group(1), '• Threads')) or title
+
+        # Extract image URLs if no video found
         image_urls = []
-
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=['--no-sandbox', '--disable-dev-shm-usage'],
-            )
-            context = browser.new_context(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36',
-                viewport={'width': 1280, 'height': 720},
-            )
-            page = context.new_page()
-
-            # Intercept network requests for video/image URLs
-            def handle_response(response):
-                req_url = response.url
-                content_type = response.headers.get('content-type', '')
-                if any(ext in req_url for ext in ['.mp4', '.m3u8', 'video']):
-                    if 'video' in content_type or '.mp4' in req_url or '.m3u8' in req_url:
-                        video_urls.append(req_url)
-                elif 'image' in content_type and any(
-                    ext in req_url for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                    if req_url not in image_urls:
-                        image_urls.append(req_url)
-
-            page.on('response', handle_response)
-
-            try:
-                page.goto(url, wait_until='networkidle', timeout=30000)
-                # Wait a bit more for lazy-loaded video
-                page.wait_for_timeout(3000)
-
-                # Also try to find video elements in the DOM
-                video_elements = page.query_selector_all('video source, video')
-                for elem in video_elements:
-                    src = elem.get_attribute('src')
-                    if src and src.startswith('http'):
-                        if src not in video_urls:
-                            video_urls.append(src)
-
-                # Try to find the post caption from the page
-                title = webpage_title
-                try:
-                    # Threads puts the caption in a specific div
-                    caption_elem = page.query_selector('[data-pressable-container="true"] span')
-                    if caption_elem:
-                        title = caption_elem.inner_text() or title
-                except Exception:
-                    pass
-
-            except Exception as e:
-                logger.warning(f'Playwright navigation error: {e}')
-            finally:
-                browser.close()
+        if not video_urls:
+            for match in re.finditer(r'"display_url"\s*:\s*"([^"]+)"', rendered_html):
+                img_url = url_or_none(match.group(1).replace('\\u0026', '&'))
+                if img_url:
+                    image_urls.append(img_url)
 
         if video_urls:
-            self.to_screen(f'Found {len(video_urls)} video URL(s) via browser')
-            formats = []
-            for vurl in video_urls:
-                formats.append({'url': vurl})
-
+            self.to_screen(f'Found {len(video_urls)} video URL(s) via headless browser')
+            formats = [{'url': vurl} for vurl in video_urls]
             return {
                 'id': post_id,
                 'title': title or f'Post {post_id}',
@@ -289,11 +320,10 @@ class ThreadsIE(InfoExtractor):
             }
 
         if image_urls:
-            self.to_screen(f'Found {len(image_urls)} image URL(s) via browser')
-            # Return the first image
+            self.to_screen(f'Found {len(image_urls)} image URL(s) via headless browser')
             return {
                 'id': post_id,
-                'title': webpage_title or f'Post {post_id}',
+                'title': title or f'Post {post_id}',
                 'url': image_urls[0],
                 'ext': determine_ext(image_urls[0], 'jpg'),
                 'vcodec': 'none',
