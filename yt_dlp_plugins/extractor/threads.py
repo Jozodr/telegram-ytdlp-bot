@@ -264,6 +264,9 @@ class ThreadsIE(InfoExtractor):
 
         self.to_screen(f'Rendered page: {len(rendered_html)} chars')
 
+        # Unescape JSON-style escaped slashes and unicode
+        rendered_html = rendered_html.replace('\\/', '/').replace('\\u0026', '&')
+
         # Extract video URLs from rendered DOM
         video_urls = []
         # Look for video elements
@@ -284,16 +287,24 @@ class ThreadsIE(InfoExtractor):
 
         # Look for video URLs in JavaScript state
         for match in re.finditer(r'"video_url"\s*:\s*"([^"]+)"', rendered_html):
-            video_url = url_or_none(match.group(1).replace('\\u0026', '&'))
+            raw_url = match.group(1).replace('\\u0026', '&')
+            video_url = url_or_none(raw_url)
             if video_url and video_url not in video_urls:
                 video_urls.append(video_url)
 
         # Look for display_url
         for match in re.finditer(r'"display_url"\s*:\s*"([^"]+)"', rendered_html):
-            display_url = url_or_none(match.group(1).replace('\\u0026', '&'))
+            raw_url = match.group(1).replace('\\u0026', '&')
+            display_url = url_or_none(raw_url)
             if display_url and ('video' in display_url or '.mp4' in display_url):
                 if display_url not in video_urls:
                     video_urls.append(display_url)
+
+        # Look for any .mp4 URLs directly in the HTML
+        for match in re.finditer(r'(https?://[^\s"\'<>]+\.mp4[^\s"\'<>]*)', rendered_html):
+            mp4_url = match.group(1)
+            if mp4_url not in video_urls:
+                video_urls.append(mp4_url)
 
         # Extract title from rendered page
         title = webpage_title

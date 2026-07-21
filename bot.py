@@ -21,6 +21,8 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 
 # Maximum file size for Telegram (50MB)
 MAX_TELEGRAM_FILE_SIZE = 50 * 1024 * 1024
+# Maximum file size for Telegram photos (10MB)
+MAX_TELEGRAM_PHOTO_SIZE = 10 * 1024 * 1024
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
@@ -172,14 +174,24 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         await status_message.edit_text("✅ Download complete! Sending image(s)...")
                         for fname in sorted(files):
                             fpath = os.path.join(temp_dir, fname)
-                            if os.path.getsize(fpath) > MAX_TELEGRAM_FILE_SIZE:
-                                await status_message.edit_text("❌ Image too large for Telegram (>50MB).")
+                            fsize = os.path.getsize(fpath)
+                            if fsize > MAX_TELEGRAM_FILE_SIZE:
+                                await status_message.edit_text("❌ File too large for Telegram (>50MB).")
                                 return
-                            with open(fpath, 'rb') as img_file:
-                                await update.message.reply_photo(
-                                    photo=img_file,
-                                    caption=f"🖼️ {info.get('title', 'Downloaded Image')}"
-                                )
+                            # If file exceeds photo limit (10MB), send as video instead
+                            if fsize > MAX_TELEGRAM_PHOTO_SIZE:
+                                with open(fpath, 'rb') as vid_file:
+                                    await update.message.reply_video(
+                                        video=vid_file,
+                                        caption=f"📹 {info.get('title', 'Downloaded Video')}",
+                                        supports_streaming=True
+                                    )
+                            else:
+                                with open(fpath, 'rb') as img_file:
+                                    await update.message.reply_photo(
+                                        photo=img_file,
+                                        caption=f"🖼️ {info.get('title', 'Downloaded Image')}"
+                                    )
                         await status_message.delete()
                         return
 
