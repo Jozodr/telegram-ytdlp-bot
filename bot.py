@@ -157,11 +157,12 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         await status_message.edit_text("❌ No available formats for this video.")
                         return
 
-                    # Check if this is an image-only post (vcodec=none)
-                    is_image = any(f.get("vcodec") == "none" for f in formats)
+                    # Check if this is an image-only post (ALL formats have vcodec=none)
+                    has_video = any(f.get("vcodec") and f.get("vcodec") != "none" for f in formats)
+                    is_image_only = not has_video
 
-                    if is_image:
-                        # Image post — download and send as photo(s)
+                    if is_image_only:
+                        # Image-only post — download and send as photo(s)
                         ydl_opts["format"] = "best"
                         with yt_dlp.YoutubeDL(ydl_opts) as ydl_dl:
                             ydl_dl.download([url])
@@ -195,12 +196,21 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         await status_message.delete()
                         return
 
-                    # For other sites, try to select the best format under the size limit
+                    # For other sites, try to select the best video format under the size limit
+                    # Prioritize formats with actual video codecs
                     selected_format = None
                     for fmt in formats:
-                        if "filesize" in fmt and fmt["filesize"] is not None and fmt["filesize"] < MAX_TELEGRAM_FILE_SIZE:
+                        is_video_fmt = fmt.get("vcodec") and fmt.get("vcodec") != "none"
+                        if is_video_fmt and "filesize" in fmt and fmt["filesize"] is not None and fmt["filesize"] < MAX_TELEGRAM_FILE_SIZE:
                             selected_format = fmt["format_id"]
                             break
+
+                    # Fallback: any format under the size limit
+                    if not selected_format:
+                        for fmt in formats:
+                            if "filesize" in fmt and fmt["filesize"] is not None and fmt["filesize"] < MAX_TELEGRAM_FILE_SIZE:
+                                selected_format = fmt["format_id"]
+                                break
 
                     if not selected_format:
                         await status_message.edit_text("⚠️ Video too large. Trying lowest quality...")
