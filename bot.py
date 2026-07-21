@@ -24,12 +24,22 @@ MAX_TELEGRAM_FILE_SIZE = 50 * 1024 * 1024
 # Maximum file size for Telegram photos (10MB)
 MAX_TELEGRAM_PHOTO_SIZE = 10 * 1024 * 1024
 
+def log_user(update: Update, action: str) -> None:
+    """Log user ID, username, and action."""
+    user = update.effective_user
+    uid = user.id if user else "unknown"
+    uname = user.username if user else "unknown"
+    first = user.first_name if user else ""
+    logging.info(f"USER {uid} (@{uname}) {first} — {action}")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
+    log_user(update, "/start")
     await update.message.reply_text("Hi! Send me a video URL, and I'll download it for you.")
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /help is issued."""
+    log_user(update, "/help")
     await update.message.reply_text("Send a URL from YouTube, Twitter, Instagram, etc., and I'll download it.")
 
 class DownloadProgressHook:
@@ -85,6 +95,7 @@ class DownloadProgressHook:
 async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Download video from the provided URL and send it back."""
     url = update.message.text
+    log_user(update, url)
     
     # Check if the message looks like a URL
     if not (url.startswith('http://') or url.startswith('https://')):
