@@ -6,6 +6,7 @@ import socket
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TimedOut, NetworkError
+from telegram.request import HTTPXRequest
 import yt_dlp
 from yt_dlp.utils import DownloadError
 import tempfile
@@ -305,7 +306,7 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             try:
                 # For larger files, use a much longer timeout
                 file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
-                upload_timeout = max(300, int(file_size_mb * 10))  # 10 seconds per MB, minimum 5 minutes
+                upload_timeout = max(600, int(file_size_mb * 30))  # 30 seconds per MB, minimum 10 minutes
                 
                 await status_message.edit_text(f"✅ Uploading video ({file_size_mb:.1f}MB)...")
                 
@@ -388,6 +389,15 @@ def main() -> None:
         logging.info(f"Using local Bot API server: {LOCAL_BOT_API_URL}")
         builder = builder.base_url(f"{LOCAL_BOT_API_URL}/bot")
         builder = builder.base_file_url(f"{LOCAL_BOT_API_URL}/file/bot")
+    
+    # Set longer request timeouts for large file uploads
+    request = HTTPXRequest(
+        connect_timeout=30.0,
+        read_timeout=60.0,
+        write_timeout=600.0,  # 10 minutes for large uploads
+        pool_timeout=30.0,
+    )
+    builder = builder.request(request).get_updates_request(request)
     
     application = builder.build()
     
