@@ -19,8 +19,11 @@ logging.basicConfig(
 # Get the token from environment variables for security
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "YOUR_TELEGRAM_BOT_TOKEN")
 
-# Maximum file size for Telegram (50MB)
-MAX_TELEGRAM_FILE_SIZE = 50 * 1024 * 1024
+# Local Bot API server URL (for >50MB uploads). Set to None to use official Telegram API.
+LOCAL_BOT_API_URL = os.environ.get("LOCAL_BOT_API_URL", None)
+
+# Maximum file size for Telegram (50MB for official API, 2GB for local server)
+MAX_TELEGRAM_FILE_SIZE = 2 * 1024 * 1024 * 1024 if LOCAL_BOT_API_URL else 50 * 1024 * 1024
 # Maximum file size for Telegram photos (10MB)
 MAX_TELEGRAM_PHOTO_SIZE = 10 * 1024 * 1024
 
@@ -378,7 +381,14 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 def main() -> None:
     """Start the bot."""
     # Configure application with appropriate timeouts
-    application = Application.builder().token(TOKEN).connect_timeout(30.0).pool_timeout(30.0).build()
+    builder = Application.builder().token(TOKEN).connect_timeout(30.0).pool_timeout(30.0)
+    
+    # Use local Bot API server if configured (allows >50MB uploads)
+    if LOCAL_BOT_API_URL:
+        logging.info(f"Using local Bot API server: {LOCAL_BOT_API_URL}")
+        builder = builder.base_url(LOCAL_BOT_API_URL)
+    
+    application = builder.build()
     
     # Set connection pool timeouts
     application.http_version = "1.1"  # Use HTTP 1.1 which has better timeout handling
