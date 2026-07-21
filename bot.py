@@ -381,8 +381,8 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 def main() -> None:
     """Start the bot."""
-    # Configure application with appropriate timeouts
-    builder = Application.builder().token(TOKEN).connect_timeout(30.0).pool_timeout(30.0)
+    # Configure application
+    builder = Application.builder().token(TOKEN)
     
     # Use local Bot API server if configured (allows >50MB uploads)
     if LOCAL_BOT_API_URL:
@@ -390,11 +390,12 @@ def main() -> None:
         builder = builder.base_url(f"{LOCAL_BOT_API_URL}/bot")
         builder = builder.base_file_url(f"{LOCAL_BOT_API_URL}/file/bot")
     
-    # Set longer request timeouts for large file uploads
+    # Set request timeouts (connect_timeout, read_timeout, write_timeout, pool_timeout)
+    # write_timeout=600 for large file uploads through local Bot API server
     request = HTTPXRequest(
         connect_timeout=30.0,
         read_timeout=60.0,
-        write_timeout=600.0,  # 10 minutes for large uploads
+        write_timeout=600.0,
         pool_timeout=30.0,
     )
     builder = builder.request(request).get_updates_request(request)
