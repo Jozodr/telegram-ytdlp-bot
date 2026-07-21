@@ -386,7 +386,8 @@ def main() -> None:
     # Use local Bot API server if configured (allows >50MB uploads)
     if LOCAL_BOT_API_URL:
         logging.info(f"Using local Bot API server: {LOCAL_BOT_API_URL}")
-        builder = builder.base_url(LOCAL_BOT_API_URL)
+        builder = builder.base_url(f"{LOCAL_BOT_API_URL}/bot")
+        builder = builder.base_file_url(f"{LOCAL_BOT_API_URL}/file/bot")
     
     application = builder.build()
     
