@@ -158,7 +158,18 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         return
 
                     # Check if this is an image-only post (ALL formats have vcodec=none)
-                    has_video = any(f.get("vcodec") and f.get("vcodec") != "none" for f in formats)
+                    # Also check extension — .mp4/.webm without vcodec is still a video
+                    VIDEO_EXTS = {'.mp4', '.webm', '.mkv', '.mov'}
+                    def _is_video_fmt(f):
+                        vc = f.get("vcodec")
+                        if vc and vc != "none":
+                            return True
+                        ext = f.get("ext", "")
+                        if ext and f".{ext.lstrip('.')}" in VIDEO_EXTS:
+                            return True
+                        return False
+
+                    has_video = any(_is_video_fmt(f) for f in formats)
                     is_image_only = not has_video
 
                     if is_image_only:
@@ -197,11 +208,10 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         return
 
                     # For other sites, try to select the best video format under the size limit
-                    # Prioritize formats with actual video codecs
+                    # Prioritize formats with actual video codecs or video extensions
                     selected_format = None
                     for fmt in formats:
-                        is_video_fmt = fmt.get("vcodec") and fmt.get("vcodec") != "none"
-                        if is_video_fmt and "filesize" in fmt and fmt["filesize"] is not None and fmt["filesize"] < MAX_TELEGRAM_FILE_SIZE:
+                        if _is_video_fmt(fmt) and "filesize" in fmt and fmt["filesize"] is not None and fmt["filesize"] < MAX_TELEGRAM_FILE_SIZE:
                             selected_format = fmt["format_id"]
                             break
 
