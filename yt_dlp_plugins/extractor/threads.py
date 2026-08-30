@@ -166,12 +166,18 @@ class ThreadsIE(InfoExtractor):
         """Return the post object carrying the media.
 
         Reposts/quotes have no media of their own; the actual video/image
-        lives in a nested share_info post (quoted_attachment_post, etc.).
+        lives either in a nested share_info post (quoted_attachment_post,
+        etc.) or under text_post_app_info.linked_inline_media.
         """
         if traverse_obj(post, 'code') != post_id:
             return None
         if self._has_media(post):
             return post
+
+        linked = traverse_obj(
+            post, ('text_post_app_info', 'linked_inline_media'))
+        if isinstance(linked, dict) and self._has_media(linked):
+            return linked
 
         nested = post
         for _ in range(2):
@@ -335,33 +341,56 @@ class ThreadsIE(InfoExtractor):
 
         video_urls = []
 
-        def add_url(candidate):
+        def clean_url(candidate):
             candidate = html.unescape(candidate)
             # Cut trailing non-URL garbage (e.g. stray XML/DASH tags)
             candidate = re.split(
                 r'[^A-Za-z0-9._~:/?#@!$&()*+,;=%-]', candidate, maxsplit=1)[0]
             cleaned = url_or_none(candidate)
             if not cleaned or 'rsrc.php' in cleaned:
-                return
-            if cleaned not in video_urls:
+                return None
+            return cleaned
+
+        def nearest_post_code(pos):
+            """Post code of the closest preceding post link in the DOM."""
+            window = rendered_html[max(0, pos - 20000):pos]
+            codes = re.findall(r'/(?:post|t)/([\w-]+)', window)
+            return codes[-1] if codes else None
+
+        def add_url(candidate):
+            cleaned = clean_url(candidate)
+            if cleaned and cleaned not in video_urls:
                 video_urls.append(cleaned)
 
-        for match in re.finditer(r'<video[^>]*src="([^"]+)"', rendered_html):
-            add_url(match.group(1))
+        # Video elements rendered by the player. Threads post pages also
+        # hydrate the following feed posts, so only videos whose nearest
+        # preceding post link is the target post are considered "owned".
+        owned_videos = []
+        for pattern in (r'<video[^>]*src="([^"]+)"', r'<source[^>]*src="([^"]+)"'):
+            for match in re.finditer(pattern, rendered_html):
+                cleaned = clean_url(match.group(1))
+                if not cleaned:
+                    continue
+                if nearest_post_code(match.start()) == post_id:
+                    if cleaned not in owned_videos:
+                        owned_videos.append(cleaned)
+                elif cleaned not in video_urls:
+                    video_urls.append(cleaned)
 
-        for match in re.finditer(r'<source[^>]*src="([^"]+)"', rendered_html):
-            add_url(match.group(1))
+        # Prefer media that provably belongs to the target post
+        if owned_videos:
+            video_urls = owned_videos
+        else:
+            for match in re.finditer(r'"video_url"\s*:\s*"([^"]+)"', rendered_html):
+                add_url(match.group(1))
 
-        for match in re.finditer(r'"video_url"\s*:\s*"([^"]+)"', rendered_html):
-            add_url(match.group(1))
+            for match in re.finditer(r'"display_url"\s*:\s*"([^"]+)"', rendered_html):
+                candidate = html.unescape(match.group(1))
+                if 'video' in candidate or '.mp4' in candidate:
+                    add_url(candidate)
 
-        for match in re.finditer(r'"display_url"\s*:\s*"([^"]+)"', rendered_html):
-            candidate = html.unescape(match.group(1))
-            if 'video' in candidate or '.mp4' in candidate:
-                add_url(candidate)
-
-        for match in re.finditer(r'(https?://[^\s"\'<>\\]+\.mp4[^\s"\'<>\\]*)', rendered_html):
-            add_url(match.group(1))
+            for match in re.finditer(r'(https?://[^\s"\'<>\\]+\.mp4[^\s"\'<>\\]*)', rendered_html):
+                add_url(match.group(1))
 
         title = webpage_title
         title_match = re.search(r'<title>([^<]+)</title>', rendered_html)
