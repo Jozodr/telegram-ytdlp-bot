@@ -142,16 +142,10 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             if 'youtube.com' in url or 'youtu.be' in url:
                 await status_message.edit_text("⏳ YouTube video detected. Processing...")
                 
-                # For YouTube, use a direct approach with external downloader
+                # Best video+audio merged into mp4 (ffmpeg is available in the image)
                 ydl_opts.update({
-                    'format': 'mp4',
-                    'external_downloader': 'ffmpeg',  # Use ffmpeg as external downloader
-                    'external_downloader_args': {'ffmpeg': ['-timeout', '30']},
-                    'skip_download': False,
-                    'youtube_include_dash_manifest': False,  # Skip DASH manifests
-                    'youtube_include_hls_manifest': True,  # Include HLS manifests
-                    'extract_flat': False,
-                    'force_generic_extractor': False
+                    'format': 'bv*+ba/b',
+                    'merge_output_format': 'mp4',
                 })
                 
                 # Get basic info
@@ -238,8 +232,8 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                                 break
 
                     if not selected_format:
-                        await status_message.edit_text("⚠️ Video too large. Trying lowest quality...")
-                        selected_format = "worst"
+                        await status_message.edit_text("⚠️ No file size info. Trying best quality...")
+                        selected_format = "best"
 
                     ydl_opts["format"] = selected_format
             
@@ -263,13 +257,10 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         # Use youtube-dl directly with minimal options
                         direct_opts = {
                             'outtmpl': f'{temp_dir}/video.mp4',
-                            'format': '18',  # Force format 18 (360p mp4)
+                            'format': 'b',  # Best single-file format (no merge)
                             'noplaylist': True,
                             'quiet': True,
                             'no_warnings': True,
-                            'external_downloader': 'ffmpeg',
-                            'external_downloader_args': {'ffmpeg': ['-timeout', '30']},
-                            'youtube_include_dash_manifest': False,
                             'merge_output_format': 'mp4'
                         }
                         

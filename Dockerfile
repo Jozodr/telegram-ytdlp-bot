@@ -7,6 +7,9 @@ RUN apk add --no-cache ffmpeg
 # Install Chromium for headless browser fallback
 RUN apk add --no-cache chromium
 
+# Install Deno JS runtime (required by yt-dlp for YouTube since 2025.11.12)
+RUN apk add --no-cache deno
+
 # Set working directory
 WORKDIR /app
 
