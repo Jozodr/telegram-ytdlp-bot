@@ -124,7 +124,7 @@ async def download_video(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             
             # Basic options without format specification
             ydl_opts = {
-                'outtmpl': f'{temp_dir}/%(title)s.%(ext)s',
+                'outtmpl': f'{temp_dir}/%(id)s.%(ext)s',
                 'noplaylist': True,
                 'quiet': True,
                 'no_warnings': True,
